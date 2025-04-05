@@ -10,37 +10,56 @@
         <fileset dir="${main.dir}" includes="*.java" />
     </path>
 
-    <target name="compile" depends="clean">
-        <mkdir dir="${classes.dir}" />
-        <!-- Compile java file to build's WEB-INF/classes -->
-        <javac srcdir="${src.dir}" destdir="${classes.dir}" classpathref="classpath"
+    <!-- Target: Compile Java source files -->
+    <target name="compile">
+        <!-- Use custom paths if provided, otherwise use default paths -->
+        <property name="custom.src.dir" value="${src.dir}" />
+        <property name="custom.classes.dir" value="${classes.dir}" />
+
+        <mkdir dir="${custom.classes.dir}" />
+        <javac srcdir="${custom.src.dir}" destdir="${custom.classes.dir}" classpathref="classpath"
             includeantruntime="false" />
     </target>
 
-    <target name="build" depends="compile">
+    <!-- Target: Build the project (compile + package into JAR/WAR) -->
+    <target name="build">
+        <!-- Use custom paths if provided, otherwise use default paths -->
+        <property name="custom.src.dir" value="${src.dir}" />
+        <property name="custom.build.dir" value="${build.dir}" />
+        <property name="custom.classes.dir" value="${classes.dir}" />
+
+        <!-- Call compile with custom paths -->
+        <antcall target="compile">
+            <param name="custom.src.dir" value="${custom.src.dir}" />
+            <param name="custom.classes.dir" value="${custom.classes.dir}" />
+        </antcall>
+
         <!-- Copy static and JSF configuration to build dir -->
-        <copy todir="${build.dir}">
+        <copy todir="${custom.build.dir}">
             <fileset dir="${web.dir}" />
         </copy>
         <!-- Copy libs to build's WEB-INF/lib dir -->
-        <copy todir="${build.dir.lib}">
+        <copy todir="${custom.build.dir}/WEB-INF/lib">
             <fileset dir="${lib.dir}" />
         </copy>
-        <!-- Copy application resources to root of /WEB-INF  -->
-        <copy todir="${classes.dir}">
+        <!-- Copy application resources to root of /WEB-INF -->
+        <copy todir="${custom.classes.dir}">
             <fileset dir="${resources.dir}" />
         </copy>
 
-        <jar destfile="${build.dir}/${ant.project.name}.jar">
-            <fileset dir="${classes.dir}" />
+        <!-- Create JAR file -->
+        <jar destfile="${custom.build.dir}/${ant.project.name}.jar">
+            <fileset dir="${custom.classes.dir}" />
             <manifest>
                 <attribute name="Created-By" value="${manifest.creator}" />
                 <attribute name="Manifest-Version" value="${manifest.version}" />
                 <attribute name="Main-Class" value="${manifest.main-class}" />
             </manifest>
         </jar>
-        <war destfile="${build.dir}/${ant.project.name}.war" webxml="${build.web.xml}">
-            <fileset dir="${build.dir}" />
+
+        <!-- Create WAR file -->
+        <war destfile="${custom.build.dir}/${ant.project.name}.war" webxml="${custom.build.dir}/WEB-INF/web.xml">
+            <fileset dir="${custom.build.dir}" />
             <manifest>
                 <attribute name="Created-By" value="${manifest.creator}" />
                 <attribute name="Manifest-Version" value="${manifest.version}" />
@@ -49,8 +68,60 @@
         </war>
     </target>
 
+    <!-- Target: Clean compiled classes and temporary files -->
     <target name="clean">
         <delete dir="${build.dir}" />
         <delete dir="${junit.report.dir}" />
+    </target>
+
+    <!-- Target: Run JUnit tests -->
+    <target name="test" depends="build">
+        <mkdir dir="${junit.report.dir}" />
+        <junit printsummary="yes" haltonfailure="yes">
+            <classpath>
+                <path refid="classpath" />
+                <pathelement location="${classes.dir}" />
+            </classpath>
+            <formatter type="plain" />
+            <batchtest todir="${junit.report.dir}">
+                <fileset dir="${test.dir}">
+                    <include name="**/*Test.java" />
+                </fileset>
+            </batchtest>
+        </junit>
+    </target>
+
+    <!-- Target: Copy the built JAR and WAR files to a remote server using SCP -->
+    <target name="scp" depends="build">
+        <!-- Copy both JAR and WAR files to the remote server -->
+        <scp file="${build.dir}/${ant.project.name}.jar,${build.dir}/${ant.project.name}.war"
+            todir="${remote.user}@${remote.host}:${remote.dir}"
+            password="${remote.password}" />
+    </target>
+
+    <!-- Target: Create an alternative version of the program with renamed variables/classes -->
+    <target name="alt">
+        <!-- Create a copy of the source directory for modification -->
+        <copy todir="${alt.src.dir}">
+            <fileset dir="${src.dir}" />
+        </copy>
+
+        <!-- Replace variable and class names in the copied source files -->
+        <replaceregexp match="\b(formBean|ControllerBean)\b" replace="Alt\1" flags="g">
+            <fileset dir="${alt.src.dir}" includes="**/*.java" />
+        </replaceregexp>
+
+        <!-- Rename files to match the new class names -->
+        <move todir="${alt.src.dir}">
+            <fileset dir="${alt.src.dir}" includes="**/ControllerBean.java" />
+            <mapper type="regexp" from="^(.*)ControllerBean\.java$$" to="\1AltControllerBean.java" />
+        </move>
+
+        <!-- Call build with custom paths -->
+        <antcall target="build">
+            <param name="custom.src.dir" value="${alt.src.dir}" />
+            <param name="custom.build.dir" value="${build.dir}" />
+            <param name="custom.classes.dir" value="${alt.classes.dir}" />
+        </antcall>
     </target>
 </project>
